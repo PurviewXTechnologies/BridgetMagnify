@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">magnify</string>
+
+    <!-- Menu Items -->
+    <string name="menu_filters">Filters</string>
+    <string name="menu_zoom">Zoom</string>
+    <string name="menu_brightness">Brightness</string>
+    <string name="menu_contrast">Contrast</string>
+    <string name="menu_sharpness">Sharpness</string>
+    <string name="menu_app_brightness">App Brightness</string>
+
+    <!-- Filter Names -->
+    <string name="filter_normal">Normal</string>
+    <string name="filter_red">Red</string>
+    <string name="filter_amber">Amber</string>
+    <string name="filter_grayscale">Grayscale</string>
+    <string name="filter_blue">Blue Light</string>
+
+    <!-- Control Instructions -->
+    <string name="scroll_to_adjust">Scroll to adjust</string>
+    <string name="press_to_confirm">Press to confirm</string>
+    <string name="scroll_to_select">Scroll to select</string>
+    <string name="press_to_apply">Press to apply</string>
+    <string name="back">Back</string>
+
+    <!-- Content Descriptions -->
+    <string name="zoom_in">Zoom In</string>
+    <string name="zoom_out">Zoom Out</string>
+    <string name="menu">Menu</string>
+
+    <!-- Messages -->
+    <string name="camera_permission_required">Camera permission is required to use the magnifier</string>
+    <string name="camera_preview_failed">Failed to start camera preview!</string>
+    <string name="camera_error">Camera error: %d</string>
+    <string name="filter_applied">Filter applied: %s</string>
+    <string name="setting_applied">%s set to %d%%</string>
+</resources>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Filter Colors -->
+    <color name="filter_normal">#FF2196F3</color>
+    <color name="filter_red">#FFF44336</color>
+    <color name="filter_amber">#FFFF9800</color>
+    <color name="filter_gray">#FF9E9E9E</color>
+    <color name="filter_blue">#FF3F51B5</color>
+
+    <!-- UI Colors -->
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+    <color name="accent_color">#FF2196F3</color>
+    <color name="text_secondary">#AAFFFFFF</color>
+
+    <!-- Background Colors -->
+    <color name="transparent">#00000000</color>
+    <color name="semi_transparent_black">#88000000</color>
+    <color name="semi_transparent_white">#88FFFFFF</color>
+</resources>
