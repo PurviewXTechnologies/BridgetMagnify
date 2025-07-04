@@ -3,6 +3,7 @@ package com.siva.magnifyapp;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.SurfaceTexture;
+import android.graphics.drawable.GradientDrawable;
 import android.hardware.camera2.*;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.opengl.GLES20;
@@ -23,7 +24,9 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.graphics.drawable.GradientDrawable;
+import android.widget.ViewFlipper;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -57,15 +60,16 @@ public class MainActivity extends BaseVoiceActivity {
 
     // UI Components
     private LinearLayout menuContainer;
-    private LinearLayout menuItems;
+    private ViewFlipper menuFlipper;
     private TextView menuTitle;
     private LinearLayout popupContainer;
     private TextView popupTitle;
     private ProgressBar progressBar;
     private TextView progressText;
     private LinearLayout filterPopup;
-    private LinearLayout filterOptions;
+    private ViewFlipper filterFlipper;
     private Button backButton;
+    private Animation inFromBottom, outToTop, inFromTop, outToBottom;
 
     // Menu system
     private List<MenuItem> mainMenuItems;
@@ -118,12 +122,12 @@ public class MainActivity extends BaseVoiceActivity {
         initializeCamera();
         initializeGL();
         initializeUI();
+        initializeAnimations();
 
-        // === UPDATED PART: use setFilterMode() instead of direct assignment ===
         int saved = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt(KEY_FILTER, 0);
         currentFilter = saved;
-        renderer.setFilterMode(saved);   // <-- this triggers correct shader update & render
+        renderer.setFilterMode(saved);
         updateUIColors();
 
         setupMainMenu();
@@ -164,14 +168,14 @@ public class MainActivity extends BaseVoiceActivity {
 
     private void initializeUI() {
         menuContainer = findViewById(R.id.menuContainer);
-        menuItems = findViewById(R.id.menuItems);
+        menuFlipper = findViewById(R.id.menuFlipper);
         menuTitle = findViewById(R.id.menuTitle);
         popupContainer = findViewById(R.id.popupContainer);
         popupTitle = findViewById(R.id.popupTitle);
         progressBar = findViewById(R.id.progressBar);
         progressText = findViewById(R.id.progressText);
         filterPopup = findViewById(R.id.filterPopup);
-        filterOptions = findViewById(R.id.filterOptions);
+        filterFlipper = findViewById(R.id.filterFlipper);
         backButton = findViewById(R.id.backButton);
 
         backButton.setOnClickListener(v -> handleBackAction());
@@ -179,9 +183,15 @@ public class MainActivity extends BaseVoiceActivity {
         Button filterBack = findViewById(R.id.filterBackButton);
         filterBack.setOnClickListener(v -> handleBackAction());
 
-        // Set initial visibility
         popupContainer.setVisibility(View.GONE);
         filterPopup.setVisibility(View.GONE);
+    }
+
+    private void initializeAnimations() {
+        inFromBottom = AnimationUtils.loadAnimation(this, R.anim.slide_in_from_bottom);
+        outToTop = AnimationUtils.loadAnimation(this, R.anim.slide_out_to_top);
+        inFromTop = AnimationUtils.loadAnimation(this, R.anim.slide_in_from_top);
+        outToBottom = AnimationUtils.loadAnimation(this, R.anim.slide_out_to_bottom);
     }
 
     private void initializeMenuAutoHide() {
@@ -192,26 +202,21 @@ public class MainActivity extends BaseVoiceActivity {
                 hideMenu();
             }
         };
-
-        // Start the auto-hide timer initially
         scheduleMenuHide();
     }
 
     private void scheduleMenuHide() {
-        // Cancel any existing scheduled hide
         menuHideHandler.removeCallbacks(menuHideRunnable);
-
-        // Only schedule hide if we're in main menu (not in popups)
         if (isInMainMenu && !isInFilterMenu && !isInProgressMode) {
             menuHideHandler.postDelayed(menuHideRunnable, MENU_HIDE_DELAY);
         }
     }
 
     private void showMenu() {
-        if (menuContainer.getVisibility() != View.VISIBLE) {
+        if (isInMainMenu && menuContainer.getVisibility() != View.VISIBLE) {
             menuContainer.setVisibility(View.VISIBLE);
+            scheduleMenuHide();
         }
-        scheduleMenuHide();
     }
 
     private void hideMenu() {
@@ -221,7 +226,6 @@ public class MainActivity extends BaseVoiceActivity {
     }
 
     private void onUserActivity() {
-        // Show menu and reset hide timer whenever user interacts
         showMenu();
     }
 
@@ -234,70 +238,34 @@ public class MainActivity extends BaseVoiceActivity {
         mainMenuItems.add(new MenuItem("Sharpness", 4));
         mainMenuItems.add(new MenuItem("App Brightness", 5));
 
-        // Setup filter options - ONLY 3 filters
         currentFilterItems = new ArrayList<>();
         currentFilterItems.add(new MenuItem("Normal", 0));
         currentFilterItems.add(new MenuItem("Amber", 1));
         currentFilterItems.add(new MenuItem("Grayscale", 2));
 
-        updateMainMenuUI();
-    }
-
-    private void updateMainMenuUI() {
-        menuItems.removeAllViews();
-
-        for (int i = 0; i < mainMenuItems.size(); i++) {
-            TextView item = new TextView(this);
-            item.setText(mainMenuItems.get(i).name);
-            item.setTextColor(i == currentMenuIndex ? 0xFFFFFFFF : 0xAAFFFFFF);
-            item.setTextSize(16);
-            item.setPadding(16, 12, 16, 12);
-            if (i == currentMenuIndex) {
-                item.setBackgroundResource(R.drawable.selected_menu_item);
-            }
-            menuItems.addView(item);
-        }
-    }
-
-    private void updateFilterMenuUI() {
-        filterOptions.removeAllViews();
-
-        for (int i = 0; i < currentFilterItems.size(); i++) {
-            TextView item = new TextView(this);
-            item.setText(currentFilterItems.get(i).name);
-            item.setTextColor(i == currentFilterIndex ? 0xFFFFFFFF : 0xAAFFFFFF);
-            item.setTextSize(18);
-            item.setPadding(24, 16, 24, 16);
-            if (i == currentFilterIndex) {
-                item.setBackgroundResource(R.drawable.selected_filter_item);
-            }
-            filterOptions.addView(item);
-        }
+        ((TextView) menuFlipper.getChildAt(0)).setText(mainMenuItems.get(0).name);
+        menuFlipper.setDisplayedChild(0);
+        currentMenuIndex = 0;
     }
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // User activity detected
         onUserActivity();
-
         switch (keyCode) {
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_DPAD_LEFT:
             case KeyEvent.KEYCODE_VOLUME_UP:
                 handleScrollUp();
                 return true;
-
             case KeyEvent.KEYCODE_DPAD_DOWN:
             case KeyEvent.KEYCODE_DPAD_RIGHT:
             case KeyEvent.KEYCODE_VOLUME_DOWN:
                 handleScrollDown();
                 return true;
-
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
                 handleSelectAction();
                 return true;
-
             case KeyEvent.KEYCODE_BACK:
                 handleBackAction();
                 return true;
@@ -309,16 +277,29 @@ public class MainActivity extends BaseVoiceActivity {
         if (isInProgressMode) {
             adjustProgressValue(true);
         } else if (isInFilterMenu) {
-            currentFilterIndex = Math.max(0, currentFilterIndex - 1);
-            updateFilterMenuUI();
-
-            currentFilter = currentFilterIndex;  // update saved filter
+            int currentChild = filterFlipper.getDisplayedChild();
+            int prevChild = (currentChild - 1 + 2) % 2;
+            TextView prevView = (TextView) filterFlipper.getChildAt(prevChild);
+            int prevIndex = (currentFilterIndex - 1 + currentFilterItems.size()) % currentFilterItems.size();
+            prevView.setText(currentFilterItems.get(prevIndex).name);
+            filterFlipper.setInAnimation(inFromTop);
+            filterFlipper.setOutAnimation(outToBottom);
+            filterFlipper.showPrevious();
+            currentFilterIndex = prevIndex;
+            currentFilter = currentFilterIndex;
             applyFilterToRenderer(currentFilter);
-            updateUIColors();                    // <-- update colors instantly
+            updateUIColors();
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_FILTER, currentFilter).apply();
-        }else if (isInMainMenu) {
-            currentMenuIndex = Math.max(0, currentMenuIndex - 1);
-            updateMainMenuUI();
+        } else if (isInMainMenu) {
+            int currentChild = menuFlipper.getDisplayedChild();
+            int prevChild = (currentChild - 1 + 2) % 2;
+            TextView prevView = (TextView) menuFlipper.getChildAt(prevChild);
+            int prevIndex = (currentMenuIndex - 1 + mainMenuItems.size()) % mainMenuItems.size();
+            prevView.setText(mainMenuItems.get(prevIndex).name);
+            menuFlipper.setInAnimation(inFromTop);
+            menuFlipper.setOutAnimation(outToBottom);
+            menuFlipper.showPrevious();
+            currentMenuIndex = prevIndex;
         }
     }
 
@@ -326,16 +307,29 @@ public class MainActivity extends BaseVoiceActivity {
         if (isInProgressMode) {
             adjustProgressValue(false);
         } else if (isInFilterMenu) {
-            currentFilterIndex = Math.min(currentFilterItems.size() - 1, currentFilterIndex + 1);
-            updateFilterMenuUI();
-
+            int currentChild = filterFlipper.getDisplayedChild();
+            int nextChild = (currentChild + 1) % 2;
+            TextView nextView = (TextView) filterFlipper.getChildAt(nextChild);
+            int nextIndex = (currentFilterIndex + 1) % currentFilterItems.size();
+            nextView.setText(currentFilterItems.get(nextIndex).name);
+            filterFlipper.setInAnimation(inFromBottom);
+            filterFlipper.setOutAnimation(outToTop);
+            filterFlipper.showNext();
+            currentFilterIndex = nextIndex;
             currentFilter = currentFilterIndex;
             applyFilterToRenderer(currentFilter);
-            updateUIColors();                    // <-- update colors instantly
+            updateUIColors();
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_FILTER, currentFilter).apply();
         } else if (isInMainMenu) {
-            currentMenuIndex = Math.min(mainMenuItems.size() - 1, currentMenuIndex + 1);
-            updateMainMenuUI();
+            int currentChild = menuFlipper.getDisplayedChild();
+            int nextChild = (currentChild + 1) % 2;
+            TextView nextView = (TextView) menuFlipper.getChildAt(nextChild);
+            int nextIndex = (currentMenuIndex + 1) % mainMenuItems.size();
+            nextView.setText(mainMenuItems.get(nextIndex).name);
+            menuFlipper.setInAnimation(inFromBottom);
+            menuFlipper.setOutAnimation(outToTop);
+            menuFlipper.showNext();
+            currentMenuIndex = nextIndex;
         }
     }
 
@@ -350,7 +344,6 @@ public class MainActivity extends BaseVoiceActivity {
     }
 
     public void handleBackAction(View v) {
-        // forward to your existing logic
         handleBackAction();
     }
 
@@ -360,13 +353,11 @@ public class MainActivity extends BaseVoiceActivity {
         } else if (isInFilterMenu) {
             closeFilterMenu();
         }
-        // Main menu doesn't have back action
     }
 
     private void selectMainMenuItem() {
         MenuItem selected = mainMenuItems.get(currentMenuIndex);
-
-        if (selected.type == 0) { // Filters
+        if (selected.type == 0) {
             openFilterMenu();
         } else {
             openProgressMode(selected.name, selected.type);
@@ -376,50 +367,36 @@ public class MainActivity extends BaseVoiceActivity {
     private void openFilterMenu() {
         isInMainMenu = false;
         isInFilterMenu = true;
-
-        currentFilterIndex = currentFilter;  // sync selection
-
-        Log.d("MainActivity", "openFilterMenu(): currentFilter=" + currentFilter + ", currentFilterIndex=" + currentFilterIndex);
-
+        currentFilterIndex = currentFilter;
         menuHideHandler.removeCallbacks(menuHideRunnable);
         menuContainer.setVisibility(View.GONE);
         filterPopup.setVisibility(View.VISIBLE);
-        updateFilterMenuUI();
+        ((TextView) filterFlipper.getChildAt(0)).setText(currentFilterItems.get(currentFilterIndex).name);
+        ((TextView) filterFlipper.getChildAt(1)).setText(currentFilterItems.get(currentFilterIndex).name);
+        filterFlipper.setDisplayedChild(0);
     }
 
     private void closeFilterMenu() {
         isInFilterMenu = false;
-        isInMainMenu = true;
-
         filterPopup.setVisibility(View.GONE);
+        isInMainMenu = true;
         menuContainer.setVisibility(View.VISIBLE);
-
-        // Resume auto-hide when returning to main menu
         scheduleMenuHide();
     }
 
     private void selectFilter() {
-        Log.d("MainActivity", "selectFilter() called with currentFilterIndex=" + currentFilterIndex);
-
         currentFilter = currentFilterIndex;
-        currentFilterIndex = currentFilter;  // keep in sync explicitly
-
         getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
                 .putInt(KEY_FILTER, currentFilter)
                 .apply();
-
         applyFilterToRenderer(currentFilter);
         updateUIColors();
         closeFilterMenu();
-
         Toast.makeText(this, "Filter applied: " + currentFilterItems.get(currentFilterIndex).name, Toast.LENGTH_SHORT).show();
     }
 
     private void applyFilterToRenderer(int filterMode) {
-        Log.d("MainActivity", "Applying filter to renderer: " + filterMode);
-
-        // Use the setFilterMode method properly
         renderer.setFilterMode(filterMode);
     }
 
@@ -427,15 +404,10 @@ public class MainActivity extends BaseVoiceActivity {
         isInMainMenu = false;
         isInProgressMode = true;
         currentProgressType = title;
-
-        // Cancel auto-hide when entering progress mode
         menuHideHandler.removeCallbacks(menuHideRunnable);
-
         menuContainer.setVisibility(View.GONE);
         popupContainer.setVisibility(View.VISIBLE);
         popupTitle.setText(title);
-
-        // Set initial progress based on current value
         int progress = getCurrentProgress(type);
         progressBar.setProgress(progress);
         updateProgressText(progress, type);
@@ -444,114 +416,62 @@ public class MainActivity extends BaseVoiceActivity {
     private void closeProgressMode() {
         isInProgressMode = false;
         isInMainMenu = true;
-
         popupContainer.setVisibility(View.GONE);
         menuContainer.setVisibility(View.VISIBLE);
-
-        // Resume auto-hide when returning to main menu
         scheduleMenuHide();
     }
 
     private void adjustProgressValue(boolean increase) {
         int currentProgress = progressBar.getProgress();
-        int step = 5; // 5% steps
-
+        int step = 5;
         if (increase) {
             currentProgress = Math.min(100, currentProgress + step);
         } else {
             currentProgress = Math.max(0, currentProgress - step);
         }
-
         progressBar.setProgress(currentProgress);
-
-        // figure out which control we're adjusting
         int type = getTypeFromTitle(currentProgressType);
         updateProgressText(currentProgress, type);
-
-        // **LIVE PREVIEW**: apply immediately
         applyProgressValue(currentProgress, type);
     }
 
     private void confirmProgressValue() {
         int progress = progressBar.getProgress();
         int type = getTypeFromTitle(currentProgressType);
-
         applyProgressValue(progress, type);
         closeProgressMode();
-
-        Toast.makeText(this, currentProgressType + " set to " + progress + "%",
-                Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, currentProgressType + " set to " + progress + "%", Toast.LENGTH_SHORT).show();
     }
 
     private int getCurrentProgress(int type) {
         switch (type) {
-            case 1: // Zoom
-                return (int) ((zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM) * 100);
-            case 2: // Brightness
-                return (int) ((brightness + 1.0f) / 2.0f * 100);
-            case 3: // Contrast
-                return (int) (contrast / 2.0f * 100);
-            case 4: // Sharpness
-                return (int) (sharpness * 100);
-            case 5: // App Brightness
-                return (int) (appBrightness * 100);
-            default:
-                return 50;
+            case 1: return (int) ((zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM) * 100);
+            case 2: return (int) ((brightness + 1.0f) / 2.0f * 100);
+            case 3: return (int) (contrast / 2.0f * 100);
+            case 4: return (int) (sharpness * 100);
+            case 5: return (int) (appBrightness * 100);
+            default: return 50;
         }
     }
 
     private void updateProgressText(int progress, int type) {
         String text = progress + "%";
-
         switch (type) {
-            case 1: // Zoom
-                float zoom = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * progress / 100f;
-                text = String.format("%.1fx", zoom);
-                break;
-            case 2: // Brightness
-                text = progress + "%";
-                break;
-            case 3: // Contrast
-                text = progress + "%";
-                break;
-            case 4: // Sharpness
-                text = progress + "%";
-                break;
-            case 5: // App Brightness
-                text = progress + "%";
-                break;
+            case 1: float zoom = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * progress / 100f; text = String.format("%.1fx", zoom); break;
+            case 2: case 3: case 4: case 5: text = progress + "%"; break;
         }
-
         progressText.setText(text);
     }
 
     private void applyProgressValue(int progress, int type) {
         switch (type) {
-            case 1: // Zoom
-                zoomLevel = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * progress / 100f;
-                renderer.setZoomLevel(zoomLevel);
-                break;
-            case 2: // Brightness
-                brightness = (progress / 50f) - 1.0f; // -1.0 to 1.0
-                renderer.setBrightness(brightness);
-                break;
-            case 3: // Contrast
-                contrast = progress / 50f; // 0.0 to 2.0
-                renderer.setContrast(contrast);
-                break;
-            case 4: // Sharpness
-                sharpness = progress / 100f; // 0.0 to 1.0
-                renderer.setSharpness(sharpness);
-                break;
-            case 5: // App Brightness
-                appBrightness = progress / 100f; // 0.0 to 1.0
-                setAppBrightness(appBrightness);
-                break;
+            case 1: zoomLevel = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * progress / 100f; renderer.setZoomLevel(zoomLevel); break;
+            case 2: brightness = (progress / 50f) - 1.0f; renderer.setBrightness(brightness); break;
+            case 3: contrast = progress / 50f; renderer.setContrast(contrast); break;
+            case 4: sharpness = progress / 100f; renderer.setSharpness(sharpness); break;
+            case 5: appBrightness = progress / 100f; setAppBrightness(appBrightness); break;
         }
-
-        if (type != 5) { // Don't render for app brightness
-            glSurfaceView.requestRender();
-        }
+        if (type != 5) glSurfaceView.requestRender();
     }
 
     private int getTypeFromTitle(String title) {
@@ -567,26 +487,14 @@ public class MainActivity extends BaseVoiceActivity {
 
     private void updateUIColors() {
         int uiColor;
-
         switch (currentFilter) {
-            case 1: // Amber
-                uiColor = colorAmber;
-                break;
-            case 2: // Grayscale
-                uiColor = colorGray;
-                break;
-            case 0: // Normal
-            default:
-                uiColor = colorNormal;
-                break;
+            case 1: uiColor = colorAmber; break;
+            case 2: uiColor = colorGray; break;
+            case 0: default: uiColor = colorNormal; break;
         }
-
-        // Update status bar color
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             getWindow().setStatusBarColor(uiColor);
         }
-
-        // Update menu container background
         if (currentFilter != 0) {
             GradientDrawable shape = new GradientDrawable();
             shape.setShape(GradientDrawable.RECTANGLE);
@@ -595,7 +503,6 @@ public class MainActivity extends BaseVoiceActivity {
             shape.setCornerRadius(16);
             menuContainer.setBackground(shape);
         } else {
-            // Reset to original background for normal filter
             menuContainer.setBackgroundResource(R.drawable.menu_background);
         }
     }
@@ -609,7 +516,6 @@ public class MainActivity extends BaseVoiceActivity {
 
     @Override
     protected void setupVoiceCommands() {
-        // Voice commands for navigation
         registerVoiceCommand("scroll up", () -> runOnUiThread(() -> {
             onUserActivity();
             handleScrollUp();
@@ -626,8 +532,6 @@ public class MainActivity extends BaseVoiceActivity {
             onUserActivity();
             handleBackAction();
         }));
-
-        // Direct filter commands - ONLY 3 filters
         registerVoiceCommand("normal", () -> runOnUiThread(() -> {
             onUserActivity();
             applyFilterDirectly(0);
@@ -640,8 +544,6 @@ public class MainActivity extends BaseVoiceActivity {
             onUserActivity();
             applyFilterDirectly(2);
         }));
-
-        // Direct zoom commands
         registerVoiceCommand("zoom in", () -> runOnUiThread(() -> {
             onUserActivity();
             zoomLevel = Math.min(MAX_ZOOM, zoomLevel + ZOOM_STEP);
@@ -657,16 +559,11 @@ public class MainActivity extends BaseVoiceActivity {
     }
 
     private void applyFilterDirectly(int filterIndex) {
-        if (filterIndex < 0 || filterIndex >= currentFilterItems.size()) {
-            return;
-        }
-
+        if (filterIndex < 0 || filterIndex >= currentFilterItems.size()) return;
         currentFilter = filterIndex;
         applyFilterToRenderer(currentFilter);
         updateUIColors();
-
-        String filterName = currentFilterItems.get(filterIndex).name;
-        Toast.makeText(this, "Filter applied: " + filterName, Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Filter applied: " + currentFilterItems.get(filterIndex).name, Toast.LENGTH_SHORT).show();
     }
 
     private void requestCameraPermission() {
@@ -720,7 +617,6 @@ public class MainActivity extends BaseVoiceActivity {
             Log.w("MainActivity", "SurfaceTexture not ready for camera");
             return;
         }
-
         try {
             CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
@@ -728,11 +624,9 @@ public class MainActivity extends BaseVoiceActivity {
             Size optimalSize = getBestPreviewSize(previewSizes, glSurfaceView.getWidth(), glSurfaceView.getHeight());
             previewSurfaceTexture.setDefaultBufferSize(optimalSize.getWidth(), optimalSize.getHeight());
             previewSurface = new Surface(previewSurfaceTexture);
-
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 return;
             }
-
             cameraManager.openCamera(cameraId, new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(CameraDevice device) {
@@ -743,7 +637,6 @@ public class MainActivity extends BaseVoiceActivity {
                         reqBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
                         reqBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON);
                         reqBuilder.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO);
-
                         cameraDevice.createCaptureSession(
                                 java.util.Collections.singletonList(previewSurface),
                                 new CameraCaptureSession.StateCallback() {
@@ -821,7 +714,6 @@ public class MainActivity extends BaseVoiceActivity {
         private float brightness = 0.0f;
         private float contrast = 1.0f;
         private float sharpness = 0.0f;
-
         public volatile int currentFilter = 0;
 
         private final String VERTEX_SHADER =
@@ -868,8 +760,8 @@ public class MainActivity extends BaseVoiceActivity {
                         "    gl_FragColor = color;\n" +
                         "}\n";
 
-        private final float[] QUAD_COORDS = { -1.0f,-1.0f, 1.0f,-1.0f, -1.0f,1.0f, 1.0f,1.0f };
-        private final float[] TEX_COORDS  = { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f };
+        private final float[] QUAD_COORDS = { -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f };
+        private final float[] TEX_COORDS = { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f };
         private FloatBuffer vertexBuffer, texBuffer;
         private int program;
         private int positionHandle, texCoordHandle, texMatrixHandle, filterModeHandle, zoomHandle;
@@ -907,14 +799,14 @@ public class MainActivity extends BaseVoiceActivity {
             GLES20.glAttachShader(program, fs);
             GLES20.glLinkProgram(program);
 
-            positionHandle     = GLES20.glGetAttribLocation(program, "aPosition");
-            texCoordHandle     = GLES20.glGetAttribLocation(program, "aTexCoord");
-            texMatrixHandle    = GLES20.glGetUniformLocation(program, "uTexMatrix");
-            filterModeHandle   = GLES20.glGetUniformLocation(program, "uFilterMode");
-            zoomHandle         = GLES20.glGetUniformLocation(program, "uZoom");
-            brightnessHandle   = GLES20.glGetUniformLocation(program, "uBrightness");
-            contrastHandle     = GLES20.glGetUniformLocation(program, "uContrast");
-            sharpnessHandle    = GLES20.glGetUniformLocation(program, "uSharpness");
+            positionHandle = GLES20.glGetAttribLocation(program, "aPosition");
+            texCoordHandle = GLES20.glGetAttribLocation(program, "aTexCoord");
+            texMatrixHandle = GLES20.glGetUniformLocation(program, "uTexMatrix");
+            filterModeHandle = GLES20.glGetUniformLocation(program, "uFilterMode");
+            zoomHandle = GLES20.glGetUniformLocation(program, "uZoom");
+            brightnessHandle = GLES20.glGetUniformLocation(program, "uBrightness");
+            contrastHandle = GLES20.glGetUniformLocation(program, "uContrast");
+            sharpnessHandle = GLES20.glGetUniformLocation(program, "uSharpness");
 
             isGLSurfaceCreated = true;
             runOnUiThread(() -> { if (isCameraPermissionGranted) openCamera(); });
@@ -936,15 +828,11 @@ public class MainActivity extends BaseVoiceActivity {
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, cameraTextureId);
             GLES20.glUniformMatrix4fv(texMatrixHandle, 1, false, texMatrix, 0);
-
-            Log.d("CameraGLRenderer", "Rendering frame with filter: " + currentFilter);
             GLES20.glUniform1i(filterModeHandle, currentFilter);
-
             GLES20.glUniform1f(zoomHandle, zoom);
             GLES20.glUniform1f(brightnessHandle, brightness);
             GLES20.glUniform1f(contrastHandle, contrast);
             GLES20.glUniform1f(sharpnessHandle, sharpness);
-
             GLES20.glEnableVertexAttribArray(positionHandle);
             GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 0, vertexBuffer);
             GLES20.glEnableVertexAttribArray(texCoordHandle);
@@ -961,12 +849,9 @@ public class MainActivity extends BaseVoiceActivity {
 
         public void setFilterMode(int mode) {
             if (currentFilter != mode) {
-                Log.d("CameraGLRenderer", "Changing filter from " + currentFilter + " to " + mode);
                 currentFilter = mode;
                 glSurfaceView.requestRender();
                 new Handler(Looper.getMainLooper()).postDelayed(() -> glSurfaceView.requestRender(), 100);
-            } else {
-                Log.d("CameraGLRenderer", "Filter mode unchanged: " + mode);
             }
         }
 

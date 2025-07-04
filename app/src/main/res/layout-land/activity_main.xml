@@ -30,11 +30,30 @@
             android:textStyle="bold"
             android:layout_marginBottom="12dp" />
 
-        <LinearLayout
-            android:id="@+id/menuItems"
+        <ViewFlipper
+            android:id="@+id/menuFlipper"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:layout_height="wrap_content">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="18sp"
+                android:padding="16dp"
+                android:background="@drawable/selected_menu_item"
+                android:textColor="@color/white"
+                android:gravity="center" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="18sp"
+                android:padding="16dp"
+                android:background="@drawable/selected_menu_item"
+                android:textColor="@color/white"
+                android:gravity="center" />
+
+        </ViewFlipper>
 
     </LinearLayout>
 
@@ -43,7 +62,7 @@
         android:id="@+id/popupContainer"
         android:layout_width="250dp"
         android:layout_height="wrap_content"
-        android:layout_gravity="end|bottom"
+        android:layout_gravity="top|end"
         android:background="@drawable/popup_background"
         android:orientation="vertical"
         android:padding="24dp"
@@ -109,7 +128,7 @@
         android:id="@+id/filterPopup"
         android:layout_width="250dp"
         android:layout_height="wrap_content"
-        android:layout_gravity="end|bottom"
+        android:layout_gravity="top|end"
         android:background="@drawable/popup_background"
         android:orientation="vertical"
         android:padding="24dp"
@@ -118,19 +137,37 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Select Filter"
+            android:text="Filter"
             android:textColor="@color/white"
             android:textSize="20sp"
             android:textStyle="bold"
             android:layout_gravity="center"
             android:layout_marginBottom="16dp" />
 
-        <LinearLayout
-            android:id="@+id/filterOptions"
+        <ViewFlipper
+            android:id="@+id/filterFlipper"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="16dp" />
+            android:layout_height="wrap_content">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="18sp"
+                android:padding="16dp"
+                android:background="@drawable/selected_filter_item"
+                android:textColor="@color/white"
+                android:gravity="center" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="18sp"
+                android:padding="16dp"
+                android:background="@drawable/selected_filter_item"
+                android:textColor="@color/white"
+                android:gravity="center" />
+
+        </ViewFlipper>
 
         <TextView
             android:layout_width="wrap_content"
@@ -151,7 +188,8 @@
             android:layout_gravity="center"
             android:paddingHorizontal="24dp"
             android:paddingVertical="8dp"
-            android:onClick="handleBackAction" />
+            android:onClick="handleBackAction"
+            android:visibility="gone"/>
 
     </LinearLayout>
 
