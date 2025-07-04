@@ -27,24 +27,30 @@ import android.widget.Toast;
 import android.widget.ViewFlipper;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
-
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
-
 import javax.microedition.khronos.opengles.GL10;
 
 public class MainActivity extends BaseVoiceActivity {
-    private static final int REQUEST_CAMERA_PERMISSION = 100;
 
+    // Constants
+    private static final int REQUEST_CAMERA_PERMISSION = 100;
     private static final String PREFS = "MagnifyPrefs";
     private static final String KEY_FILTER = "currentFilter";
+
+    // Adjustment type constants
+    private static final int TYPE_FILTER = 0;
+    private static final int TYPE_ZOOM = 1;
+    private static final int TYPE_BRIGHTNESS = 2;
+    private static final int TYPE_CONTRAST = 3;
+    private static final int TYPE_SHARPNESS = 4;
+    private static final int TYPE_APP_BRIGHTNESS = 5;
 
     // Camera related
     private GLSurfaceView glSurfaceView;
@@ -69,6 +75,8 @@ public class MainActivity extends BaseVoiceActivity {
     private LinearLayout filterPopup;
     private ViewFlipper filterFlipper;
     private Button backButton;
+
+    // Animations
     private Animation inFromBottom, outToTop, inFromTop, outToBottom;
 
     // Menu system
@@ -81,12 +89,12 @@ public class MainActivity extends BaseVoiceActivity {
     private boolean isInProgressMode = false;
     private String currentProgressType = "";
 
-    // Auto-hide menu functionality
+    // Auto-hide menu
     private Handler menuHideHandler;
     private Runnable menuHideRunnable;
     private static final int MENU_HIDE_DELAY = 5000; // 5 seconds
 
-    // Values
+    // Adjustment values
     private float zoomLevel = 1.0f;
     private float brightness = 0.0f;
     private float contrast = 1.0f;
@@ -94,7 +102,7 @@ public class MainActivity extends BaseVoiceActivity {
     private float appBrightness = 1.0f;
     private int currentFilter = 0;
 
-    // Constants
+    // Constants for adjustments
     private static final float ZOOM_STEP = 0.25f;
     private static final float MAX_ZOOM = 10.0f;
     private static final float MIN_ZOOM = 1.0f;
@@ -105,14 +113,14 @@ public class MainActivity extends BaseVoiceActivity {
     // Menu Item Class
     private static class MenuItem {
         String name;
-        int type; // 0=filter, 1=zoom, 2=brightness, 3=contrast, 4=sharpness, 5=app_brightness
-
+        int type;
         MenuItem(String name, int type) {
             this.name = name;
             this.type = type;
         }
     }
 
+    // Lifecycle Methods
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -123,18 +131,40 @@ public class MainActivity extends BaseVoiceActivity {
         initializeGL();
         initializeUI();
         initializeAnimations();
-
-        int saved = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getInt(KEY_FILTER, 0);
-        currentFilter = saved;
-        renderer.setFilterMode(saved);
-        updateUIColors();
-
         setupMainMenu();
         initializeMenuAutoHide();
         requestCameraPermission();
+
+        int savedFilter = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_FILTER, 0);
+        currentFilter = savedFilter;
+        renderer.setFilterMode(savedFilter);
+        updateUIColors();
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        glSurfaceView.onResume();
+        onUserActivity();
+    }
+
+    @Override
+    protected void onPause() {
+        closeCamera();
+        glSurfaceView.onPause();
+        menuHideHandler.removeCallbacks(menuHideRunnable);
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (menuHideHandler != null) {
+            menuHideHandler.removeCallbacks(menuHideRunnable);
+        }
+        super.onDestroy();
+    }
+
+    // Initialization Methods
     private void initializeColors() {
         colorNormal = ContextCompat.getColor(this, R.color.filter_normal);
         colorRed = ContextCompat.getColor(this, R.color.filter_red);
@@ -177,7 +207,6 @@ public class MainActivity extends BaseVoiceActivity {
         filterPopup = findViewById(R.id.filterPopup);
         filterFlipper = findViewById(R.id.filterFlipper);
         backButton = findViewById(R.id.backButton);
-
         backButton.setOnClickListener(v -> handleBackAction());
 
         Button filterBack = findViewById(R.id.filterBackButton);
@@ -196,15 +225,30 @@ public class MainActivity extends BaseVoiceActivity {
 
     private void initializeMenuAutoHide() {
         menuHideHandler = new Handler(Looper.getMainLooper());
-        menuHideRunnable = new Runnable() {
-            @Override
-            public void run() {
-                hideMenu();
-            }
-        };
+        menuHideRunnable = () -> hideMenu();
         scheduleMenuHide();
     }
 
+    private void setupMainMenu() {
+        mainMenuItems = new ArrayList<>();
+        mainMenuItems.add(new MenuItem("Filters", TYPE_FILTER));
+        mainMenuItems.add(new MenuItem("Zoom", TYPE_ZOOM));
+        mainMenuItems.add(new MenuItem("Brightness", TYPE_BRIGHTNESS));
+        mainMenuItems.add(new MenuItem("Contrast", TYPE_CONTRAST));
+        mainMenuItems.add(new MenuItem("Sharpness", TYPE_SHARPNESS));
+        mainMenuItems.add(new MenuItem("App Brightness", TYPE_APP_BRIGHTNESS));
+
+        currentFilterItems = new ArrayList<>();
+        currentFilterItems.add(new MenuItem("Normal", 0));
+        currentFilterItems.add(new MenuItem("Amber", 1));
+        currentFilterItems.add(new MenuItem("Grayscale", 2));
+
+        ((TextView) menuFlipper.getChildAt(0)).setText(mainMenuItems.get(0).name);
+        menuFlipper.setDisplayedChild(0);
+        currentMenuIndex = 0;
+    }
+
+    // Menu Handling
     private void scheduleMenuHide() {
         menuHideHandler.removeCallbacks(menuHideRunnable);
         if (isInMainMenu && !isInFilterMenu && !isInProgressMode) {
@@ -213,10 +257,10 @@ public class MainActivity extends BaseVoiceActivity {
     }
 
     private void showMenu() {
-        if (isInMainMenu && menuContainer.getVisibility() != View.VISIBLE) {
+        if (menuContainer.getVisibility() != View.VISIBLE) {
             menuContainer.setVisibility(View.VISIBLE);
-            scheduleMenuHide();
         }
+        scheduleMenuHide();
     }
 
     private void hideMenu() {
@@ -229,25 +273,7 @@ public class MainActivity extends BaseVoiceActivity {
         showMenu();
     }
 
-    private void setupMainMenu() {
-        mainMenuItems = new ArrayList<>();
-        mainMenuItems.add(new MenuItem("Filters", 0));
-        mainMenuItems.add(new MenuItem("Zoom", 1));
-        mainMenuItems.add(new MenuItem("Brightness", 2));
-        mainMenuItems.add(new MenuItem("Contrast", 3));
-        mainMenuItems.add(new MenuItem("Sharpness", 4));
-        mainMenuItems.add(new MenuItem("App Brightness", 5));
-
-        currentFilterItems = new ArrayList<>();
-        currentFilterItems.add(new MenuItem("Normal", 0));
-        currentFilterItems.add(new MenuItem("Amber", 1));
-        currentFilterItems.add(new MenuItem("Grayscale", 2));
-
-        ((TextView) menuFlipper.getChildAt(0)).setText(mainMenuItems.get(0).name);
-        menuFlipper.setDisplayedChild(0);
-        currentMenuIndex = 0;
-    }
-
+    // Key Events
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         onUserActivity();
@@ -274,7 +300,7 @@ public class MainActivity extends BaseVoiceActivity {
     }
 
     private void handleScrollUp() {
-        if (isInProgressMode) {
+        if ( isInProgressMode) {
             adjustProgressValue(true);
         } else if (isInFilterMenu) {
             int currentChild = filterFlipper.getDisplayedChild();
@@ -343,10 +369,6 @@ public class MainActivity extends BaseVoiceActivity {
         }
     }
 
-    public void handleBackAction(View v) {
-        handleBackAction();
-    }
-
     private void handleBackAction() {
         if (isInProgressMode) {
             closeProgressMode();
@@ -355,15 +377,7 @@ public class MainActivity extends BaseVoiceActivity {
         }
     }
 
-    private void selectMainMenuItem() {
-        MenuItem selected = mainMenuItems.get(currentMenuIndex);
-        if (selected.type == 0) {
-            openFilterMenu();
-        } else {
-            openProgressMode(selected.name, selected.type);
-        }
-    }
-
+    // Filter Menu
     private void openFilterMenu() {
         isInMainMenu = false;
         isInFilterMenu = true;
@@ -386,10 +400,7 @@ public class MainActivity extends BaseVoiceActivity {
 
     private void selectFilter() {
         currentFilter = currentFilterIndex;
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
-                .putInt(KEY_FILTER, currentFilter)
-                .apply();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_FILTER, currentFilter).apply();
         applyFilterToRenderer(currentFilter);
         updateUIColors();
         closeFilterMenu();
@@ -398,6 +409,16 @@ public class MainActivity extends BaseVoiceActivity {
 
     private void applyFilterToRenderer(int filterMode) {
         renderer.setFilterMode(filterMode);
+    }
+
+    // Progress Mode
+    private void selectMainMenuItem() {
+        MenuItem selected = mainMenuItems.get(currentMenuIndex);
+        if (selected.type == TYPE_FILTER) {
+            openFilterMenu();
+        } else {
+            openProgressMode(selected.name, selected.type);
+        }
     }
 
     private void openProgressMode(String title, int type) {
@@ -423,14 +444,26 @@ public class MainActivity extends BaseVoiceActivity {
 
     private void adjustProgressValue(boolean increase) {
         int currentProgress = progressBar.getProgress();
-        int step = 5;
+        int type = getTypeFromTitle(currentProgressType);
+        int step;
+
+        if (type == TYPE_APP_BRIGHTNESS) {
+            if (increase) {
+                step = (currentProgress < 5) ? 1 : 5;
+            } else {
+                step = (currentProgress > 5) ? 5 : 1;
+            }
+        } else {
+            step = 5; // Default step for other adjustments
+        }
+
         if (increase) {
             currentProgress = Math.min(100, currentProgress + step);
         } else {
             currentProgress = Math.max(0, currentProgress - step);
         }
+
         progressBar.setProgress(currentProgress);
-        int type = getTypeFromTitle(currentProgressType);
         updateProgressText(currentProgress, type);
         applyProgressValue(currentProgress, type);
     }
@@ -445,52 +478,69 @@ public class MainActivity extends BaseVoiceActivity {
 
     private int getCurrentProgress(int type) {
         switch (type) {
-            case 1: return (int) ((zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM) * 100);
-            case 2: return (int) ((brightness + 1.0f) / 2.0f * 100);
-            case 3: return (int) (contrast / 2.0f * 100);
-            case 4: return (int) (sharpness * 100);
-            case 5: return (int) (appBrightness * 100);
+            case TYPE_ZOOM: return (int) ((zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM) * 100);
+            case TYPE_BRIGHTNESS: return (int) ((brightness + 1.0f) / 2.0f * 100);
+            case TYPE_CONTRAST: return (int) (contrast / 2.0f * 100);
+            case TYPE_SHARPNESS: return (int) (sharpness * 100);
+            case TYPE_APP_BRIGHTNESS: return (int) (appBrightness * 100);
             default: return 50;
         }
     }
 
     private void updateProgressText(int progress, int type) {
         String text = progress + "%";
-        switch (type) {
-            case 1: float zoom = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * progress / 100f; text = String.format("%.1fx", zoom); break;
-            case 2: case 3: case 4: case 5: text = progress + "%"; break;
+        if (type == TYPE_ZOOM) {
+            float zoom = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * progress / 100f;
+            text = String.format("%.1fx", zoom);
         }
         progressText.setText(text);
     }
 
     private void applyProgressValue(int progress, int type) {
         switch (type) {
-            case 1: zoomLevel = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * progress / 100f; renderer.setZoomLevel(zoomLevel); break;
-            case 2: brightness = (progress / 50f) - 1.0f; renderer.setBrightness(brightness); break;
-            case 3: contrast = progress / 50f; renderer.setContrast(contrast); break;
-            case 4: sharpness = progress / 100f; renderer.setSharpness(sharpness); break;
-            case 5: appBrightness = progress / 100f; setAppBrightness(appBrightness); break;
+            case TYPE_ZOOM:
+                zoomLevel = MIN_ZOOM + (MAX_ZOOM - MIN_ZOOM) * progress / 100f;
+                renderer.setZoomLevel(zoomLevel);
+                break;
+            case TYPE_BRIGHTNESS:
+                brightness = (progress / 50f) - 1.0f;
+                renderer.setBrightness(brightness);
+                break;
+            case TYPE_CONTRAST:
+                contrast = progress / 50f;
+                renderer.setContrast(contrast);
+                break;
+            case TYPE_SHARPNESS:
+                sharpness = progress / 100f;
+                renderer.setSharpness(sharpness);
+                break;
+            case TYPE_APP_BRIGHTNESS:
+                appBrightness = progress / 100f;
+                setAppBrightness(appBrightness);
+                break;
         }
-        if (type != 5) glSurfaceView.requestRender();
+        if (type != TYPE_APP_BRIGHTNESS) glSurfaceView.requestRender();
     }
 
     private int getTypeFromTitle(String title) {
         switch (title) {
-            case "Zoom": return 1;
-            case "Brightness": return 2;
-            case "Contrast": return 3;
-            case "Sharpness": return 4;
-            case "App Brightness": return 5;
-            default: return 0;
+            case "Filters": return TYPE_FILTER;
+            case "Zoom": return TYPE_ZOOM;
+            case "Brightness": return TYPE_BRIGHTNESS;
+            case "Contrast": return TYPE_CONTRAST;
+            case "Sharpness": return TYPE_SHARPNESS;
+            case "App Brightness": return TYPE_APP_BRIGHTNESS;
+            default: return -1;
         }
     }
 
+    // UI Updates
     private void updateUIColors() {
         int uiColor;
         switch (currentFilter) {
             case 1: uiColor = colorAmber; break;
             case 2: uiColor = colorGray; break;
-            case 0: default: uiColor = colorNormal; break;
+            default: uiColor = colorNormal; break;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             getWindow().setStatusBarColor(uiColor);
@@ -514,6 +564,7 @@ public class MainActivity extends BaseVoiceActivity {
         getWindow().setAttributes(layoutParams);
     }
 
+    // Voice Commands
     @Override
     protected void setupVoiceCommands() {
         registerVoiceCommand("scroll up", () -> runOnUiThread(() -> {
@@ -566,6 +617,7 @@ public class MainActivity extends BaseVoiceActivity {
         Toast.makeText(this, "Filter applied: " + currentFilterItems.get(filterIndex).name, Toast.LENGTH_SHORT).show();
     }
 
+    // Permissions
     private void requestCameraPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA_PERMISSION);
@@ -588,29 +640,7 @@ public class MainActivity extends BaseVoiceActivity {
         }
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        glSurfaceView.onResume();
-        onUserActivity();
-    }
-
-    @Override
-    protected void onPause() {
-        closeCamera();
-        glSurfaceView.onPause();
-        menuHideHandler.removeCallbacks(menuHideRunnable);
-        super.onPause();
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (menuHideHandler != null) {
-            menuHideHandler.removeCallbacks(menuHideRunnable);
-        }
-        super.onDestroy();
-    }
-
+    // Camera Handling
     private void openCamera() {
         if (!isCameraPermissionGranted || cameraId == null) return;
         if (previewSurfaceTexture == null) {
@@ -624,6 +654,7 @@ public class MainActivity extends BaseVoiceActivity {
             Size optimalSize = getBestPreviewSize(previewSizes, glSurfaceView.getWidth(), glSurfaceView.getHeight());
             previewSurfaceTexture.setDefaultBufferSize(optimalSize.getWidth(), optimalSize.getHeight());
             previewSurface = new Surface(previewSurfaceTexture);
+
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 return;
             }
@@ -649,6 +680,7 @@ public class MainActivity extends BaseVoiceActivity {
                                             e.printStackTrace();
                                         }
                                     }
+
                                     @Override
                                     public void onConfigureFailed(CameraCaptureSession session) {
                                         Toast.makeText(MainActivity.this, "Failed to start camera preview!", Toast.LENGTH_SHORT).show();
@@ -659,11 +691,13 @@ public class MainActivity extends BaseVoiceActivity {
                         e.printStackTrace();
                     }
                 }
+
                 @Override
                 public void onDisconnected(CameraDevice device) {
                     device.close();
                     cameraDevice = null;
                 }
+
                 @Override
                 public void onError(CameraDevice device, int error) {
                     Toast.makeText(MainActivity.this, "Camera error: " + error, Toast.LENGTH_SHORT).show();
@@ -709,6 +743,7 @@ public class MainActivity extends BaseVoiceActivity {
         }
     }
 
+    // GL Renderer
     private class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.OnFrameAvailableListener {
         private float zoom = 1.0f;
         private float brightness = 0.0f;
@@ -770,11 +805,9 @@ public class MainActivity extends BaseVoiceActivity {
         private final float[] texMatrix = new float[16];
 
         CameraGLRenderer() {
-            vertexBuffer = ByteBuffer.allocateDirect(QUAD_COORDS.length * 4)
-                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
+            vertexBuffer = ByteBuffer.allocateDirect(QUAD_COORDS.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
             vertexBuffer.put(QUAD_COORDS).position(0);
-            texBuffer = ByteBuffer.allocateDirect(TEX_COORDS.length * 4)
-                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
+            texBuffer = ByteBuffer.allocateDirect(TEX_COORDS.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
             texBuffer.put(TEX_COORDS).position(0);
         }
 
