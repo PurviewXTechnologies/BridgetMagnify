@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">magnify</string>
+    <string name="app_name">Magnify</string>
 
     <!-- Menu Items -->
     <string name="menu_filters">Filters</string>
