@@ -21,11 +21,9 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     private lateinit var renderer: CameraGLRenderer
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
-
     private enum class Mode { ZOOM, FILTER, BRIGHTNESS }
     private var currentMode = Mode.ZOOM
     private val filterNames = listOf("Normal", "High Contrast", "Inverted", "Amber", "Green Edge")
-
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 101
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
@@ -51,7 +49,6 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
         listenToTempleEvents()
         updateUI()
     }
-
     private fun configureDualEyeDisplay() {
         runOnUiThread {
             // LEFT EYE: Show Mirror
@@ -77,7 +74,6 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             }
         }
     }
-
     private fun startCamera() {
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
         try {
@@ -108,7 +104,6 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             }, null)
         } catch (e: Exception) { e.printStackTrace() }
     }
-
     private fun startPreview() {
         try {
             val texture = renderer.surfaceTexture ?: return
@@ -131,7 +126,6 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             }, null)
         } catch (e: Exception) {}
     }
-
     private fun listenToTempleEvents() {
         lifecycleScope.launch {
             templeActionViewModel.state.collect { action ->
@@ -151,7 +145,6 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             }
         }
     }
-
     private fun adjustValue(increase: Boolean) {
         val dir = if (increase) 1 else -1
         when (currentMode) {
@@ -164,7 +157,6 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
         }
         updateUI()
     }
-
     private fun updateUI() {
         runOnUiThread {
             mBindingPair.updateView {
@@ -186,7 +178,6 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             }
         }
     }
-
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
