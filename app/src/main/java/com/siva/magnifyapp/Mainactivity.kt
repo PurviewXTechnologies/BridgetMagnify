@@ -3,9 +3,13 @@ package com.siva.magnifyapp
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
+import android.media.ImageReader
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -41,6 +45,8 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     private lateinit var renderer: CameraGLRenderer
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
+    private var imageReader: ImageReader? = null
+    private var sensorOrientation = 0
 
     // ── Modes ────────────────────────────────────────────────────────────────
     private enum class Mode { ZOOM, FILTER, BRIGHTNESS, OCR_OFFLINE, OCR_ONLINE }
@@ -120,6 +126,7 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
         try {
             captureSession?.close(); captureSession = null
             cameraDevice?.close();   cameraDevice   = null
+            imageReader?.close();    imageReader    = null
             mBindingPair.right.glTextureView.onPause()
         } catch (e: Exception) {
             Log.e(TAG, "Error releasing camera in onPause", e)
@@ -199,12 +206,6 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
         if (isProcessingOcr) return
         vibrateCapture()
 
-        val bmp = mBindingPair.right.glTextureView.bitmap
-        if (bmp == null) {
-            Log.w(TAG, "Freeze capture: bitmap not available")
-            return
-        }
-
         ocrSubState = OcrSubState.FROZEN
 
         // Show processing badge immediately
@@ -216,6 +217,32 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             }
         }
 
+        takeHighResPicture()
+    }
+
+    private fun takeHighResPicture() {
+        try {
+            if (cameraDevice == null || imageReader == null) {
+                fallbackToScreenBitmap()
+                return
+            }
+            val req = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+            imageReader?.surface?.let { req?.addTarget(it) }
+            req?.set(CaptureRequest.JPEG_QUALITY, 100.toByte())
+            captureSession?.capture(req!!.build(), null, null)
+        } catch (e: Exception) {
+            Log.e(TAG, "High-res capture failed", e)
+            fallbackToScreenBitmap()
+        }
+    }
+
+    private fun fallbackToScreenBitmap() {
+        val bmp = mBindingPair.right.glTextureView.bitmap
+        if (bmp == null) {
+            Log.w(TAG, "Freeze capture: bitmap not available")
+            resetToReadyState()
+            return
+        }
         if (currentMode == Mode.OCR_ONLINE) {
             runGeminiOcr(bmp)
         } else {
@@ -466,6 +493,8 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             val chars  = manager.getCameraCharacteristics(cameraDevice!!.id)
             val map    = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
 
+            sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+
             val bestSize = map?.getOutputSizes(SurfaceTexture::class.java)
                 ?.maxByOrNull { it.width * it.height }
             val width  = bestSize?.width  ?: 1920
@@ -476,7 +505,49 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             renderer.updateAspectRatio(width, height)
             val surface = Surface(texture)
 
-            val req = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+            // Setup high-res ImageReader for OCR
+            val jpegSizes = map?.getOutputSizes(ImageFormat.JPEG)
+            val bestJpegSize = jpegSizes?.maxByOrNull { it.width * it.height }
+            val jpegWidth = bestJpegSize?.width ?: width
+            val jpegHeight = bestJpegSize?.height ?: height
+            
+            imageReader = ImageReader.newInstance(jpegWidth, jpegHeight, ImageFormat.JPEG, 2)
+            imageReader?.setOnImageAvailableListener({ reader ->
+                val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+                val buffer = image.planes[0].buffer
+                val bytes = ByteArray(buffer.remaining())
+                buffer.get(bytes)
+                image.close()
+
+                lifecycleScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    if (bitmap != null) {
+                        // Crop to match digital zoom
+                        val zoom = renderer.zoom
+                        val cropWidth = (bitmap.width / zoom).toInt()
+                        val cropHeight = (bitmap.height / zoom).toInt()
+                        val startX = (bitmap.width - cropWidth) / 2
+                        val startY = (bitmap.height - cropHeight) / 2
+                        
+                        val matrix = Matrix()
+                        if (sensorOrientation != 0) {
+                            matrix.postRotate(sensorOrientation.toFloat())
+                        }
+                        
+                        val finalBitmap = Bitmap.createBitmap(bitmap, startX, startY, cropWidth, cropHeight, matrix, true)
+                        
+                        if (currentMode == Mode.OCR_ONLINE) {
+                            runGeminiOcr(finalBitmap)
+                        } else {
+                            runOcr(finalBitmap)
+                        }
+                    } else {
+                        runOnUiThread { fallbackToScreenBitmap() }
+                    }
+                }
+            }, null)
+
+            val req = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
             req?.addTarget(surface)
 
             req?.set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_HIGH_QUALITY)
@@ -526,7 +597,7 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             if (bestFps != null)
                 req?.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, bestFps)
 
-            cameraDevice?.createCaptureSession(listOf(surface),
+            cameraDevice?.createCaptureSession(listOf(surface, imageReader!!.surface),
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
                         if (cameraDevice == null) return
