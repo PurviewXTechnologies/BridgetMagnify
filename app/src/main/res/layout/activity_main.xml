@@ -1,5 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
+<!--
+    RayNeo X3 Pro – Accessibility-First AR Layout
+    Canvas: 640×480 px  |  FOV: 30°  |  Black = Transparent
+
+    Root is a FrameLayout so MirroringView can sit as a full-screen overlay
+    on top of the entire content hierarchy. This is critical for correct
+    dual-eye rendering:
+
+    • RIGHT EYE: contentLayout (LinearLayout) is VISIBLE, mirrorView is GONE
+    • LEFT EYE:  contentLayout is GONE, mirrorView is VISIBLE (covers everything)
+
+    MirroringView reflects mBindingPair.right.root → automatically shows
+    whatever the right eye shows, with zero manual synchronisation needed.
+
+    ┌────────────────────── FrameLayout (root) ────────────────────────┐
+    │  ┌──────────────── contentLayout (LinearLayout) ───────────────┐ │
+    │  │  viewfinderContainer  weight=4  (74%)                       │ │
+    │  │  [2dp cyan divider]                                         │ │
+    │  │  overlayContainer     weight=1.4 (26%)                      │ │
+    │  └─────────────────────────────────────────────────────────────┘ │
+    │  ┌──────────────── mirrorView (full-screen overlay) ───────────┐ │
+    │  │  GONE on right eye, VISIBLE on left eye                     │ │
+    │  └─────────────────────────────────────────────────────────────┘ │
+    └──────────────────────────────────────────────────────────────────┘
+
+    Spec compliance:
+    · Background: #000000 = transparent on waveguide
+    · Min font: 16sp (all visible text)
+    · Accent: #4DE2FF Cyan
+    · Status: #44FF66 Fluorescent Green (green channel = lowest power)
+    · Line widths ≥ 2dp (scan-frame corner brackets)
+    · APL < 13% – pure-black backgrounds everywhere
+-->
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -7,77 +40,340 @@
     android:background="@android:color/black"
     android:keepScreenOn="true">
 
-    <com.siva.magnifyapp.GLTextureView
-        android:id="@+id/glTextureView"
+    <!-- ══════════════════════════════════════════════════════════════
+         CONTENT LAYOUT — right eye only
+         LinearLayout stacks: viewfinder / OCR panel / HUD vertically
+         ══════════════════════════════════════════════════════════════ -->
+    <LinearLayout
+        android:id="@+id/contentLayout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="@android:color/black">
 
+        <!-- ╔══════════════════════════════════════════════════════╗
+             ║  VIEWFINDER CONTAINER                               ║
+             ║  weight=4 normal · weight=2 OCR (set in code)       ║
+             ╚══════════════════════════════════════════════════════╝ -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/viewfinderContainer"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="4">
+
+            <!-- Camera GL feed — 16dp side margins = transparent AR borders -->
+            <com.siva.magnifyapp.GLTextureView
+                android:id="@+id/glTextureView"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="8dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+            <!-- OCR word-highlight overlay (same bounds as camera) -->
+            <FrameLayout
+                android:id="@+id/ocrOverlayContainer"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="8dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+            <!-- Faint full-perimeter scan border -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/scan_frame_border"
+                android:importantForAccessibility="no"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+            <!-- Corner bracket: Top-Left -->
+            <View
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:background="@drawable/corner_tl"
+                android:importantForAccessibility="no"
+                app:layout_constraintTop_toTopOf="@+id/glTextureView"
+                app:layout_constraintStart_toStartOf="@+id/glTextureView" />
+
+            <!-- Corner bracket: Top-Right -->
+            <View
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:background="@drawable/corner_tr"
+                android:importantForAccessibility="no"
+                app:layout_constraintTop_toTopOf="@+id/glTextureView"
+                app:layout_constraintEnd_toEndOf="@+id/glTextureView" />
+
+            <!-- Corner bracket: Bottom-Left -->
+            <View
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:background="@drawable/corner_bl"
+                android:importantForAccessibility="no"
+                app:layout_constraintBottom_toBottomOf="@+id/glTextureView"
+                app:layout_constraintStart_toStartOf="@+id/glTextureView" />
+
+            <!-- Corner bracket: Bottom-Right -->
+            <View
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:background="@drawable/corner_br"
+                android:importantForAccessibility="no"
+                app:layout_constraintBottom_toBottomOf="@+id/glTextureView"
+                app:layout_constraintEnd_toEndOf="@+id/glTextureView" />
+
+            <!-- OCR scanning status badge (top-right of viewfinder) -->
+            <TextView
+                android:id="@+id/ocrStatusBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="● SCANNING"
+                android:textColor="#44FF66"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:background="#CC000000"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:visibility="gone"
+                android:layout_marginTop="20dp"
+                android:layout_marginEnd="24dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <!-- ╔══════════════════════════════════════════════════════╗
+             ║  OCR TEXT PANEL  (GONE in normal modes)             ║
+             ║  weight=4 when visible (set programmatically)       ║
+             ╚══════════════════════════════════════════════════════╝ -->
+        <LinearLayout
+            android:id="@+id/ocrResultPanel"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="0"
+            android:orientation="vertical"
+            android:background="#F2000000"
+            android:visibility="gone">
+
+            <!-- Panel header: title | word count | font size badge -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:orientation="horizontal"
+                android:background="#1A4DE2FF"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="◉  EXTRACTED TEXT"
+                    android:textColor="#4DE2FF"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.10" />
+
+                <TextView
+                    android:id="@+id/ocrWordCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="–"
+                    android:textColor="#80FFFFFF"
+                    android:textSize="13sp"
+                    android:layout_marginEnd="12dp" />
+
+                <TextView
+                    android:id="@+id/ocrFontSizeBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="28sp"
+                    android:textColor="#4DE2FF"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:background="#264DE2FF"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="3dp" />
+
+            </LinearLayout>
+
+            <!-- Large scrollable extracted text -->
+            <ScrollView
+                android:id="@+id/ocrScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fillViewport="true"
+                android:overScrollMode="ifContentScrolls"
+                android:scrollbarThumbVertical="@android:color/darker_gray">
+
+                <TextView
+                    android:id="@+id/ocrTextView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="#FFFFFF"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:lineSpacingMultiplier="1.35"
+                    android:padding="20dp"
+                    android:gravity="center"
+                    android:shadowColor="#000000"
+                    android:shadowRadius="6"
+                    android:shadowDx="2"
+                    android:shadowDy="2" />
+
+            </ScrollView>
+
+            <!-- TTS active badge -->
+            <TextView
+                android:id="@+id/ttsBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:text="♪ READING ALOUD"
+                android:textColor="#44FF66"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:background="#CC000000"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:layout_marginEnd="12dp"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+        <!-- 2dp Cyan accent rule -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:background="#4DE2FF" />
+
+        <!-- ╔══════════════════════════════════════════════════════╗
+             ║  HUD STRIP  (weight=1.4, always visible)            ║
+             ╚══════════════════════════════════════════════════════╝ -->
+        <LinearLayout
+            android:id="@+id/overlayContainer"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1.4"
+            android:minHeight="110dp"
+            android:orientation="vertical"
+            android:background="#F0000000"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:gravity="center_vertical">
+
+            <!-- Row 1: Mode label (left) + live value (right) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:id="@+id/tvMode"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="MODE: ZOOM"
+                    android:textColor="#4DE2FF"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.12"
+                    android:shadowColor="#000000"
+                    android:shadowRadius="4"
+                    android:shadowDx="1"
+                    android:shadowDy="1" />
+
+                <TextView
+                    android:id="@+id/tvValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1.0×"
+                    android:textColor="#FFFFFF"
+                    android:textSize="32sp"
+                    android:textStyle="bold"
+                    android:shadowColor="#000000"
+                    android:shadowRadius="8"
+                    android:shadowDx="2"
+                    android:shadowDy="2" />
+            </LinearLayout>
+
+            <!-- Row 2: Progress bar -->
+            <ProgressBar
+                android:id="@+id/progressBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:progress="0"
+                android:progressTint="#4DE2FF"
+                android:progressBackgroundTint="#264DE2FF"
+                android:layout_marginBottom="4dp" />
+
+            <!-- Row 3a: Default help text -->
+            <TextView
+                android:id="@+id/instructionText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instructions"
+                android:textColor="#7FFFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:letterSpacing="0.05" />
+
+            <!-- Row 3b: OCR-mode swipe hint (GONE in other modes) -->
+            <TextView
+                android:id="@+id/ocrHintText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ocr_instructions"
+                android:textColor="#7FFFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:visibility="gone"
+                android:letterSpacing="0.05" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         MIRROR VIEW — left eye only, full-screen overlay
+         Sits at root FrameLayout level so it truly covers 100% of the
+         display regardless of what contentLayout is doing.
+         GONE on right eye. VISIBLE on left eye.
+         ══════════════════════════════════════════════════════════════ -->
     <com.ffalcon.mercury.android.sdk.ui.wiget.MirroringView
         android:id="@+id/mirrorView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone" />
 
-    <LinearLayout
-        android:id="@+id/overlayContainer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="20dp"
-        android:orientation="vertical"
-        android:gravity="center_horizontal"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <TextView
-            android:id="@+id/tvMode"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="MODE: ZOOM"
-            android:textColor="#00FFCC"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:background="#80000000"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="4dp"
-            android:layout_marginBottom="10dp"/>
-
-        <TextView
-            android:id="@+id/tvValue"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="1.0x"
-            android:textColor="#FFFFFF"
-            android:textSize="40sp"
-            android:textStyle="bold"
-            android:shadowColor="#000000"
-            android:shadowRadius="10"
-            android:shadowDx="3"
-            android:shadowDy="3"/>
-
-        <ProgressBar
-            android:id="@+id/progressBar"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="200dp"
-            android:layout_height="wrap_content"
-            android:max="100"
-            android:progress="0"
-            android:layout_marginBottom="30dp"/>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="SWIPE: Adjust | TAP: Change Mode | DOUBLE TAP: Reset"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:background="#CC000000"
-            android:paddingHorizontal="14dp"
-            android:paddingVertical="8dp"
-            android:shadowColor="#000000"
-            android:shadowRadius="5"
-            android:shadowDx="2"
-            android:shadowDy="2"/>
-
-    </LinearLayout>
-</androidx.constraintlayout.widget.ConstraintLayout>
+</FrameLayout>

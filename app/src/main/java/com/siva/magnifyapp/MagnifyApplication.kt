@@ -8,7 +8,10 @@ class MagnifyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Initialize the RayNeo SDK globally before any Activity starts
+        // Initialize the RayNeo Mercury SDK before any Activity starts.
+        // Must be called here (Application.onCreate) so the SDK's internal
+        // services and the temple-touch ViewModel are ready by the time
+        // MainActivity binds to templeActionViewModel.
         try {
             MercurySDK.init(this)
             Log.d("MagnifyApp", "Mercury SDK Initialized successfully")

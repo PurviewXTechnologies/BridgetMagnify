@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bottom-Right corner bracket: 2dp bottom line + 2dp right line -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:top="26dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#4DE2FF" />
+        </shape>
+    </item>
+    <item android:left="26dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#4DE2FF" />
+        </shape>
+    </item>
+</layer-list>

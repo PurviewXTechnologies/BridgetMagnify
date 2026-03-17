@@ -1,38 +1,41 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Magnify</string>
+    <string name="app_name">MagnifyApp</string>
 
-    <!-- Menu Items -->
-    <string name="menu_filters">Filters</string>
-    <string name="menu_zoom">Zoom</string>
-    <string name="menu_brightness">Brightness</string>
-    <string name="menu_contrast">Contrast</string>
-    <string name="menu_sharpness">Sharpness</string>
-    <string name="menu_app_brightness">App Brightness</string>
+    <string name="mode_zoom">ZOOM</string>
+    <string name="mode_filter">FILTER</string>
+    <string name="mode_brightness">BRIGHTNESS</string>
+    <string name="mode_ocr">OCR</string>
 
     <!-- Filter Names -->
     <string name="filter_normal">Normal</string>
-    <string name="filter_red">Red</string>
+    <string name="filter_high_contrast">High Contrast</string>
+    <string name="filter_inverted">Inverted</string>
     <string name="filter_amber">Amber</string>
+    <string name="filter_green_edge">Green Edge</string>
+
+    <string name="filter_red">Red</string>
     <string name="filter_grayscale">Grayscale</string>
     <string name="filter_blue">Blue Light</string>
 
-    <!-- Control Instructions -->
-    <string name="scroll_to_adjust">Scroll to adjust</string>
-    <string name="press_to_confirm">Press to confirm</string>
+    <!-- UI Elements -->
+    <string name="double_tap_to_freeze">Double tap to freeze/unfreeze</string>
     <string name="scroll_to_select">Scroll to select</string>
     <string name="press_to_apply">Press to apply</string>
     <string name="back">Back</string>
+    <string name="instructions">SWIPE: Adjust | TAP: Mode | DOUBLE TAP: Exit</string>
+    <string name="ocr_instructions">SCAN: Swipe ► to Capture | READING: ◄/► Size, ▲/▼ Scroll | TAP: Resume</string>
 
     <!-- Content Descriptions -->
     <string name="zoom_in">Zoom In</string>
     <string name="zoom_out">Zoom Out</string>
-    <string name="menu">Menu</string>
+    <string name="next_filter">Next Filter</string>
+    <string name="previous_filter">Previous Filter</string>
 
-    <!-- Messages -->
-    <string name="camera_permission_required">Camera permission is required to use the magnifier</string>
-    <string name="camera_preview_failed">Failed to start camera preview!</string>
+    <!-- Error Messages -->
     <string name="camera_error">Camera error: %d</string>
     <string name="filter_applied">Filter applied: %s</string>
     <string name="setting_applied">%s set to %d%%</string>
+    <string name="mode_format">MODE: %s</string>
+    <string name="zoom_value_format">%.1fx</string>
+    <string name="percentage_format">%d%%</string>
 </resources>
