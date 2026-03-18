@@ -66,7 +66,7 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     private val geminiModel by lazy {
         GenerativeModel(
             modelName = "gemini-2.5-flash",
-            apiKey = "AIzaSyA2K5cQ6V5F2qkzYbeqPrmVKQe42nd1KDk"
+            apiKey = BuildConfig.GEMINI_API_KEY
         )
     }
 
@@ -162,15 +162,15 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
 
     private fun initTts() {
         elevenTts = ElevenLabsTTS(
-            apiKey   = "sk_dd8427cba4e3c4efb63c8f917f753d3b80b76af948ed4b01",
-            voiceId  = "SPavHXefn4qr6bDvZI10",
+            apiKey   = BuildConfig.ELEVENLABS_API_KEY,
+            voiceId  = BuildConfig.ELEVENLABS_VOICE_ID,
             cacheDir = cacheDir
         )
         elevenTts.onPlaybackFinished = {
             runOnUiThread { mBindingPair.updateView { ttsBadge?.visibility = View.GONE } }
         }
         elevenStt = ElevenLabsSTT(
-            apiKey   = "sk_dd8427cba4e3c4efb63c8f917f753d3b80b76af948ed4b01",
+            apiKey   = BuildConfig.ELEVENLABS_API_KEY,
             cacheDir = cacheDir
         )
     }
