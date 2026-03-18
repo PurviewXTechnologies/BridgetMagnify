@@ -184,10 +184,11 @@
                 android:gravity="center_vertical">
 
                 <TextView
+                    android:id="@+id/ocrPanelTitle"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="◉  EXTRACTED TEXT"
+                    android:text="@string/ocr_panel_title_extracted"
                     android:textColor="#4DE2FF"
                     android:textSize="14sp"
                     android:textStyle="bold"

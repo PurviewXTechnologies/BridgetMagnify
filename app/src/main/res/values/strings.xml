@@ -23,7 +23,10 @@
     <string name="press_to_apply">Press to apply</string>
     <string name="back">Back</string>
     <string name="instructions">SWIPE: Adjust | TAP: Mode | DOUBLE TAP: Exit</string>
-    <string name="ocr_instructions">SCAN: Swipe ► to Capture | READING: ◄/► Size, ▲/▼ Scroll | TAP: Resume</string>
+    <string name="ocr_instructions">SCAN: Swipe ► Capture | FROZEN: ◄/► Size · ▼ Scroll | TAP: Reset</string>
+    <string name="ocr_instructions_online">SCAN: ► Capture | FROZEN: ◄/► Size · ▼ Scroll · ↑ Ask↑Send | TAP: Reset</string>
+    <string name="ocr_panel_title_extracted">◉  EXTRACTED TEXT</string>
+    <string name="ocr_panel_title_qa">◉  Q&amp;A ANSWER</string>
 
     <!-- Content Descriptions -->
     <string name="zoom_in">Zoom In</string>

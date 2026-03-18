@@ -13,7 +13,7 @@ import android.media.ImageReader
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
-import android.speech.tts.TextToSpeech
+// ElevenLabs TTS replaces Android TextToSpeech
 import android.transition.TransitionManager
 import android.util.Log
 import android.view.Surface
@@ -35,7 +35,6 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.siva.magnifyapp.databinding.ActivityMainBinding
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -54,9 +53,11 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     private lateinit var filterNames: List<String>
 
     // ── OCR state machine ────────────────────────────────────────────────────
-    private enum class OcrSubState { SCANNING, FROZEN }
+    private enum class OcrSubState { SCANNING, FROZEN, QA_LISTENING, QA_PROCESSING }
     private var ocrSubState = OcrSubState.SCANNING
     private var isProcessingOcr = false
+    /** The raw text extracted in OCR_ONLINE mode — used as Gemini Q&A context. */
+    private var extractedOcrText = ""
 
     // ML Kit text recognizer (Offline, on-device)
     private val textRecognizer: TextRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -65,7 +66,7 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     private val geminiModel by lazy {
         GenerativeModel(
             modelName = "gemini-2.5-flash",
-            apiKey = "AIzaSyCvc7FZb8b7EnhORVsFiQqblG5wYnr2ceY"
+            apiKey = "AIzaSyBNpKbnrlYLVW9NM9-OqZdeFtx2jKI2IWw"
         )
     }
 
@@ -77,9 +78,9 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     private val OCR_FONT_MAX  = 52f
     private val OCR_FONT_STEP = 4f
 
-    // ── Text-to-Speech ───────────────────────────────────────────────────────
-    private var textToSpeech: TextToSpeech? = null
-    private var isTtsReady = false
+    // ── ElevenLabs TTS + STT ─────────────────────────────────────────────────
+    private lateinit var elevenTts: ElevenLabsTTS
+    private lateinit var elevenStt: ElevenLabsSTT
     private var lastSpokenText = ""
 
     // ── Haptics ──────────────────────────────────────────────────────────────
@@ -87,7 +88,10 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
 
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 101
-        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+        private val REQUIRED_PERMISSIONS = arrayOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO   // needed for Q&A mic (ElevenLabsSTT)
+        )
         private const val TAG = "MagnifyApp"
     }
 
@@ -109,7 +113,7 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
         @Suppress("DEPRECATION")
         vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator
 
-        initTts()
+        initTts()   // ElevenLabs TTS + STT
         configureDualEyeDisplay()
 
         renderer = CameraGLRenderer {
@@ -135,40 +139,41 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     }
 
     override fun onDestroy() {
-        textToSpeech?.stop()
-        textToSpeech?.shutdown()
-        textToSpeech = null
+        elevenTts.shutdown()
+        elevenStt.cancel()
         super.onDestroy()
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  TTS
+    //  ElevenLabs TTS
     // ══════════════════════════════════════════════════════════════════════════
 
     private fun initTts() {
-        textToSpeech = TextToSpeech(this) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                val result = textToSpeech?.setLanguage(Locale.US)
-                isTtsReady = result != TextToSpeech.LANG_MISSING_DATA &&
-                        result != TextToSpeech.LANG_NOT_SUPPORTED
-                if (isTtsReady) {
-                    textToSpeech?.setSpeechRate(0.85f)
-                    textToSpeech?.setPitch(1.0f)
-                }
-            }
+        elevenTts = ElevenLabsTTS(
+            apiKey   = "sk_dd8427cba4e3c4efb63c8f917f753d3b80b76af948ed4b01",
+            voiceId  = "SPavHXefn4qr6bDvZI10",
+            cacheDir = cacheDir
+        )
+        elevenTts.onPlaybackFinished = {
+            runOnUiThread { mBindingPair.updateView { ttsBadge?.visibility = View.GONE } }
         }
+        elevenStt = ElevenLabsSTT(
+            apiKey   = "sk_dd8427cba4e3c4efb63c8f917f753d3b80b76af948ed4b01",
+            cacheDir = cacheDir
+        )
     }
 
     private fun speakIfNew(text: String) {
-        if (!isTtsReady || text.isBlank() || text == lastSpokenText) return
+        if (text.isBlank() || text == lastSpokenText) return
         lastSpokenText = text
-        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ocr_utterance")
 
         runOnUiThread { mBindingPair.updateView { ttsBadge?.visibility = View.VISIBLE } }
         lifecycleScope.launch {
-            val duration = (text.length * 85L).coerceIn(1500L, 15_000L)
-            delay(duration)
-            runOnUiThread { mBindingPair.updateView { ttsBadge?.visibility = View.GONE } }
+            val success = elevenTts.speak(text)
+            if (!success) {
+                // If API call failed, hide badge
+                runOnUiThread { mBindingPair.updateView { ttsBadge?.visibility = View.GONE } }
+            }
         }
     }
 
@@ -304,11 +309,17 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
         val displayText = if (fullText.isEmpty()) "No text detected." else fullText
         currentDisplayedText = displayText
 
+        // Store context for Q&A (only meaningful in OCR_ONLINE mode)
+        if (currentMode == Mode.OCR_ONLINE && fullText.isNotEmpty() && fullText != "No text detected.") {
+            extractedOcrText = fullText
+        }
+
         val wordCount = displayText.split("\\s+".toRegex()).count { it.isNotBlank() }
 
         runOnUiThread {
             showOcrResultPanel()
             mBindingPair.updateView {
+                ocrPanelTitle?.setText(R.string.ocr_panel_title_extracted)
                 ocrTextView?.apply {
                     text = currentDisplayedText
                     textSize = ocrFontSize
@@ -341,9 +352,11 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     private fun resetToReadyState() {
         ocrSubState = OcrSubState.SCANNING
         currentDisplayedText = ""
-        textToSpeech?.stop()
+        extractedOcrText = ""
+        elevenTts.stop()
+        elevenStt.cancel()
         lastSpokenText = ""
-        
+
         runOnUiThread {
             mBindingPair.updateView {
                 ocrStatusBadge?.text = "● READY"
@@ -366,8 +379,127 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             hideOcrResultPanel()
         }
         currentDisplayedText = ""
-        textToSpeech?.stop()
+        extractedOcrText = ""
+        elevenTts.stop()
+        elevenStt.cancel()
         lastSpokenText = ""
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Q&A (OCR_ONLINE only)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** Enter listening sub-state: open mic and show 🎤 badge. */
+    private fun startQaListening() {
+        if (extractedOcrText.isBlank()) return   // nothing to ask about
+        ocrSubState = OcrSubState.QA_LISTENING
+        elevenTts.stop()                          // stop any current readout
+        lastSpokenText = ""
+        elevenStt.startRecording()
+        runOnUiThread {
+            mBindingPair.updateView {
+                ocrStatusBadge?.text = "🎤 LISTENING…"
+                ocrStatusBadge?.setTextColor(Color.parseColor("#CC88FF"))
+                ocrStatusBadge?.visibility = View.VISIBLE
+                ttsBadge?.visibility = View.GONE
+            }
+        }
+    }
+
+    /** Stop mic, transcribe, send to Gemini, read the answer aloud. */
+    private fun submitQaQuestion() {
+        ocrSubState = OcrSubState.QA_PROCESSING
+        runOnUiThread {
+            mBindingPair.updateView {
+                ocrStatusBadge?.text = "⚙ THINKING…"
+                ocrStatusBadge?.setTextColor(Color.parseColor("#FAC775"))
+                ocrStatusBadge?.visibility = View.VISIBLE
+            }
+        }
+        lifecycleScope.launch {
+            val question = elevenStt.stopAndTranscribe()
+            if (question.isNullOrBlank()) {
+                // No audio detected – silently return to FROZEN
+                runOnUiThread {
+                    mBindingPair.updateView {
+                        ocrStatusBadge?.text = "✗ NOT HEARD"
+                        ocrStatusBadge?.setTextColor(Color.parseColor("#F09595"))
+                    }
+                }
+                ocrSubState = OcrSubState.FROZEN
+                return@launch
+            }
+            processGeminiQa(question)
+        }
+    }
+
+    /** Cancel Q&A listening without submitting — return to FROZEN. */
+    private fun cancelQaListening() {
+        elevenStt.cancel()
+        ocrSubState = OcrSubState.FROZEN
+        runOnUiThread {
+            mBindingPair.updateView {
+                val wc = currentDisplayedText.split("\\s+".toRegex()).count { it.isNotBlank() }
+                ocrStatusBadge?.text = "✓ $wc WORDS"
+                ocrStatusBadge?.setTextColor(Color.parseColor("#4DE2FF"))
+                ocrStatusBadge?.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    /**
+     * Send extracted text + question to Gemini, display and speak the answer.
+     * Already on a coroutine — Gemini suspend call is safe here.
+     */
+    private suspend fun processGeminiQa(question: String) {
+        try {
+            val prompt = """
+                You are an AI assistant helping a visually impaired person using AR smart glasses.
+
+                Text extracted from the camera:
+                $extractedOcrText
+
+                User question: $question
+
+                Give a clear, concise answer based on the extracted text.
+                If the question cannot be answered from it, say so briefly.
+            """.trimIndent()
+
+            val response = geminiModel.generateContent(
+                com.google.ai.client.generativeai.type.content { text(prompt) }
+            )
+            val answer = response.text?.trim() ?: "Sorry, I could not generate an answer."
+
+            runOnUiThread {
+                showOcrResultPanel()
+                mBindingPair.updateView {
+                    ocrPanelTitle?.setText(R.string.ocr_panel_title_qa)
+                    ocrTextView?.apply {
+                        text = "Q: $question\n\nA: $answer"
+                        textSize = ocrFontSize
+                    }
+                    ocrWordCount?.text = "Q&A"
+                    ocrStatusBadge?.text = "✓ ANSWER READY"
+                    ocrStatusBadge?.setTextColor(Color.parseColor("#4DE2FF"))
+                    ocrStatusBadge?.visibility = View.VISIBLE
+                    ocrScrollView?.post { ocrScrollView?.scrollTo(0, 0) }
+                }
+            }
+            ocrSubState = OcrSubState.FROZEN
+            vibrateSuccess()
+            speakIfNew(answer)   // read only the answer, not the question
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Gemini Q&A failed", e)
+            runOnUiThread {
+                mBindingPair.updateView {
+                    ocrStatusBadge?.text = "✗ Q&A ERROR"
+                    ocrStatusBadge?.setTextColor(Color.parseColor("#F09595"))
+                    ocrStatusBadge?.visibility = View.VISIBLE
+                }
+            }
+            ocrSubState = OcrSubState.FROZEN
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -636,6 +768,15 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
 
     private fun handleTap() {
         val isOcrCurrently = currentMode == Mode.OCR_OFFLINE || currentMode == Mode.OCR_ONLINE
+
+        // Q&A-specific tap handling
+        if (isOcrCurrently && ocrSubState == OcrSubState.QA_LISTENING) {
+            cancelQaListening()
+            return
+        }
+        // Ignore taps while Gemini is processing
+        if (isOcrCurrently && ocrSubState == OcrSubState.QA_PROCESSING) return
+
         if (isOcrCurrently && ocrSubState == OcrSubState.FROZEN) {
             // In frozen state, a tap dismisses the result and goes back to ready
             resetToReadyState()
@@ -646,8 +787,8 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
         val entries  = Mode.entries
         currentMode  = entries[(currentMode.ordinal + 1) % entries.size]
 
-        val isOcrNew = currentMode == Mode.OCR_OFFLINE || currentMode == Mode.OCR_ONLINE
-        val isOcrPrev = prevMode == Mode.OCR_OFFLINE || prevMode == Mode.OCR_ONLINE
+        val isOcrNew  = currentMode == Mode.OCR_OFFLINE || currentMode == Mode.OCR_ONLINE
+        val isOcrPrev = prevMode   == Mode.OCR_OFFLINE || prevMode   == Mode.OCR_ONLINE
 
         when {
             isOcrNew && !isOcrPrev -> {
@@ -685,39 +826,54 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
                 updateUI()
             }
             Mode.OCR_OFFLINE, Mode.OCR_ONLINE -> {
-                if (ocrSubState == OcrSubState.SCANNING) {
-                    // When scanning, a forward swipe takes the picture.
-                    if (increase) {
-                        triggerFreezeCapture()
+                when (ocrSubState) {
+                    OcrSubState.SCANNING -> {
+                        // Forward swipe captures the frame
+                        if (increase) triggerFreezeCapture()
                     }
-                } else if (ocrSubState == OcrSubState.FROZEN) {
-                    // When reading the frozen text, swipe forward increases font size,
-                    // and swipe backward decreases font size.
-                    val step = if (increase) OCR_FONT_STEP else -OCR_FONT_STEP
-                    ocrFontSize = (ocrFontSize + step).coerceIn(OCR_FONT_MIN, OCR_FONT_MAX)
-                    
-                    runOnUiThread {
-                        mBindingPair.updateView {
-                            ocrTextView?.textSize   = ocrFontSize
-                            ocrFontSizeBadge?.text  = "${ocrFontSize.toInt()}sp"
+                    OcrSubState.FROZEN -> {
+                        // Forward/backward changes font size
+                        val step = if (increase) OCR_FONT_STEP else -OCR_FONT_STEP
+                        ocrFontSize = (ocrFontSize + step).coerceIn(OCR_FONT_MIN, OCR_FONT_MAX)
+                        runOnUiThread {
+                            mBindingPair.updateView {
+                                ocrTextView?.textSize  = ocrFontSize
+                                ocrFontSizeBadge?.text = "${ocrFontSize.toInt()}sp"
+                            }
                         }
                     }
+                    OcrSubState.QA_LISTENING -> {
+                        // Forward swipe submits the recorded question
+                        if (increase) submitQaQuestion()
+                    }
+                    OcrSubState.QA_PROCESSING -> { /* ignore all swipes while waiting */ }
                 }
             }
         }
     }
 
     private fun handleVerticalSwipe(down: Boolean) {
-        // Vertical swipes are specifically for scrolling the OCR text when frozen
         if (currentMode == Mode.OCR_OFFLINE || currentMode == Mode.OCR_ONLINE) {
-            if (ocrSubState == OcrSubState.FROZEN) {
-                runOnUiThread {
-                    mBindingPair.updateView {
-                        // Scroll down if swiping down, up if swiping up. 250px is roughly half the text area height
+            when (ocrSubState) {
+                OcrSubState.FROZEN -> {
+                    if (!down && currentMode == Mode.OCR_ONLINE) {
+                        // Swipe UP in ONLINE FROZEN = start Q&A listening
+                        startQaListening()
+                    } else {
+                        // Swipe DOWN (or UP in OFFLINE) = scroll text
                         val scrollAmount = if (down) 250 else -250
-                        ocrScrollView?.smoothScrollBy(0, scrollAmount)
+                        runOnUiThread {
+                            mBindingPair.updateView {
+                                ocrScrollView?.smoothScrollBy(0, scrollAmount)
+                            }
+                        }
                     }
                 }
+                OcrSubState.QA_LISTENING -> {
+                    // Swipe UP again = submit the recorded question (push-to-talk)
+                    if (!down) submitQaQuestion()
+                }
+                else -> { /* no vertical swipe action in SCANNING / QA_PROCESSING */ }
             }
         }
     }
@@ -763,12 +919,21 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
                         tvValue.text = getString(R.string.percentage_format, pct)
                         progressBar.progress = pct
                     }
-                    Mode.OCR_OFFLINE, Mode.OCR_ONLINE -> {
-                        tvValue.visibility     = View.GONE
-                        progressBar.visibility = View.GONE
+                    Mode.OCR_OFFLINE -> {
+                        tvValue.visibility          = View.GONE
+                        progressBar.visibility      = View.GONE
                         instructionText?.visibility = View.GONE
                         ocrHintText?.visibility     = View.VISIBLE
-                        ocrFontSizeBadge?.text = "${ocrFontSize.toInt()}sp"
+                        ocrHintText?.text           = getString(R.string.ocr_instructions)
+                        ocrFontSizeBadge?.text      = "${ocrFontSize.toInt()}sp"
+                    }
+                    Mode.OCR_ONLINE -> {
+                        tvValue.visibility          = View.GONE
+                        progressBar.visibility      = View.GONE
+                        instructionText?.visibility = View.GONE
+                        ocrHintText?.visibility     = View.VISIBLE
+                        ocrHintText?.text           = getString(R.string.ocr_instructions_online)
+                        ocrFontSizeBadge?.text      = "${ocrFontSize.toInt()}sp"
                     }
                 }
             }
