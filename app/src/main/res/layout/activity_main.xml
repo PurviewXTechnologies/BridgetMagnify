@@ -62,7 +62,7 @@
             android:layout_weight="4">
 
             <!-- Camera GL feed — 16dp side margins = transparent AR borders -->
-            <com.siva.magnifyapp.GLTextureView
+            <com.shashi.rayneomagnify.GLTextureView
                 android:id="@+id/glTextureView"
                 android:layout_width="0dp"
                 android:layout_height="0dp"

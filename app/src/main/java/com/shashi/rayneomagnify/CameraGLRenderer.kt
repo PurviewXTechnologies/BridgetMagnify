@@ -1,4 +1,4 @@
-package com.siva.magnifyapp
+package com.shashi.rayneomagnify
 
 import android.graphics.SurfaceTexture
 import android.opengl.GLES11Ext

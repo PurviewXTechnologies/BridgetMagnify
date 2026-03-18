@@ -1,4 +1,4 @@
-package com.siva.magnifyapp
+package com.shashi.rayneomagnify
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -34,7 +34,7 @@ import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.siva.magnifyapp.databinding.ActivityMainBinding
+import com.shashi.rayneomagnify.databinding.ActivityMainBinding
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -66,7 +66,7 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     private val geminiModel by lazy {
         GenerativeModel(
             modelName = "gemini-2.5-flash",
-            apiKey = "AIzaSyBNpKbnrlYLVW9NM9-OqZdeFtx2jKI2IWw"
+            apiKey = "AIzaSyA2K5cQ6V5F2qkzYbeqPrmVKQe42nd1KDk"
         )
     }
 

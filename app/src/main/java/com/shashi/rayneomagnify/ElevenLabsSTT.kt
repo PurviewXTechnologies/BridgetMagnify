@@ -1,4 +1,4 @@
-package com.siva.magnifyapp
+package com.shashi.rayneomagnify
 
 import android.media.AudioFormat
 import android.media.AudioRecord

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.siva.magnifyapp'
+    namespace 'com.shashi.rayneomagnify'
     compileSdk 36 // Note: Changed to 35 (Stable) unless you specifically installed 36
 
     defaultConfig {
-        applicationId "com.siva.magnifyapp"
+        applicationId "com.shashi.rayneomagnify"
         minSdk 29
         targetSdk 36
         versionCode 1
