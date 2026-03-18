@@ -52,8 +52,14 @@ class GLTextureView(context: Context, attrs: AttributeSet?) :
     override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
 
     fun onResume() {
-        // Thread is re-created by onSurfaceTextureAvailable when the surface
-        // is restored; no explicit restart logic required here.
+        // FIX: The system does not re-call onSurfaceTextureAvailable after a simple pause.
+        // We must manually restart the render thread if the surface is still available.
+        if (isAvailable && surfaceTexture != null) {
+            if (renderThread == null || renderThread?.running == false) {
+                renderThread = RenderThread(surfaceTexture!!, renderer!!, width, height)
+                renderThread?.start()
+            }
+        }
     }
 
     fun onPause() {

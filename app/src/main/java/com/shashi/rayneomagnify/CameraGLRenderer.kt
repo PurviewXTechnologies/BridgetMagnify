@@ -11,8 +11,9 @@ import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
-class CameraGLRenderer(private val onSurfaceCreatedCallback: () -> Unit) :
-    GLTextureView.Renderer, SurfaceTexture.OnFrameAvailableListener {
+class CameraGLRenderer(
+    private val onSurfaceCreatedCallback: () -> Unit
+) : GLTextureView.Renderer, SurfaceTexture.OnFrameAvailableListener {
 
     var zoom = 1.0f
     var brightness = 0.0f
@@ -205,8 +206,8 @@ class CameraGLRenderer(private val onSurfaceCreatedCallback: () -> Unit) :
     }
 
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {
-        // Render loop in GLTextureView handles continuous drawing; no extra
-        // requestRender call needed here.
+        // GLTextureView handles continuous rendering automatically
+        // Each new camera frame will be drawn in the next render cycle
     }
 
     // ── Shader compilation helpers ───────────────────────────────────────────

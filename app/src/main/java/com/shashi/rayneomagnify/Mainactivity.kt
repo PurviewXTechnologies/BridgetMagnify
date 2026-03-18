@@ -86,6 +86,9 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     // ── Haptics ──────────────────────────────────────────────────────────────
     private var vibrator: Vibrator? = null
 
+    // Guard against concurrent startCamera() calls (e.g. onResume + onRequestPermissionsResult)
+    private var isCameraStarting = false
+
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 101
         private val REQUIRED_PERMISSIONS = arrayOf(
@@ -116,16 +119,25 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
         initTts()   // ElevenLabs TTS + STT
         configureDualEyeDisplay()
 
-        renderer = CameraGLRenderer {
-            if (allPermissionsGranted()) startCamera()
-            else ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
-        }
+        // Initialize renderer with surface creation callback
+        renderer = CameraGLRenderer(
+            onSurfaceCreatedCallback = {
+                if (allPermissionsGranted()) startCamera()
+                else ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+            }
+        )
         mBindingPair.right.glTextureView.setRenderer(renderer)
 
         listenToTempleEvents()
         updateUI()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // This will now properly restart the OpenGL thread, which will automatically
+        // trigger the surface callback and start the camera when it is truly ready.
+        mBindingPair.right.glTextureView.onResume()
+    }
     override fun onPause() {
         try {
             captureSession?.close(); captureSession = null
@@ -560,7 +572,7 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
         runOnUiThread {
             mBindingPair.right.instructionText?.visibility = View.VISIBLE
             mBindingPair.right.ocrHintText?.visibility     = View.GONE
-            
+
             mBindingPair.updateView {
                 ocrStatusBadge?.visibility = View.GONE
             }
@@ -594,6 +606,11 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     // ══════════════════════════════════════════════════════════════════════════
 
     private fun startCamera() {
+        // Prevent double-open: both onResume() and onRequestPermissionsResult()
+        // can fire near-simultaneously after a permission dialog.
+        if (isCameraStarting || cameraDevice != null) return
+        isCameraStarting = true
+
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
         try {
             var backId: String? = null
@@ -606,16 +623,29 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             }
             val finalId = backId ?: manager.cameraIdList[0]
             if (ActivityCompat.checkSelfPermission(
-                    this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
+                    this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                isCameraStarting = false; return
+            }
 
             manager.openCamera(finalId, object : CameraDevice.StateCallback() {
-                override fun onOpened(camera: CameraDevice) { cameraDevice = camera; startPreview() }
-                override fun onDisconnected(camera: CameraDevice) { cameraDevice?.close(); cameraDevice = null }
+                override fun onOpened(camera: CameraDevice) {
+                    isCameraStarting = false
+                    cameraDevice = camera
+                    startPreview()
+                }
+                override fun onDisconnected(camera: CameraDevice) {
+                    isCameraStarting = false
+                    cameraDevice?.close(); cameraDevice = null
+                }
                 override fun onError(camera: CameraDevice, error: Int) {
+                    isCameraStarting = false
                     Log.e(TAG, "Camera error: $error"); cameraDevice?.close(); cameraDevice = null
                 }
             }, null)
-        } catch (e: Exception) { Log.e(TAG, "startCamera failed", e) }
+        } catch (e: Exception) {
+            isCameraStarting = false
+            Log.e(TAG, "startCamera failed", e)
+        }
     }
 
     private fun startPreview() {
@@ -642,7 +672,7 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
             val bestJpegSize = jpegSizes?.maxByOrNull { it.width * it.height }
             val jpegWidth = bestJpegSize?.width ?: width
             val jpegHeight = bestJpegSize?.height ?: height
-            
+
             imageReader = ImageReader.newInstance(jpegWidth, jpegHeight, ImageFormat.JPEG, 2)
             imageReader?.setOnImageAvailableListener({ reader ->
                 val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
@@ -660,14 +690,14 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
                         val cropHeight = (bitmap.height / zoom).toInt()
                         val startX = (bitmap.width - cropWidth) / 2
                         val startY = (bitmap.height - cropHeight) / 2
-                        
+
                         val matrix = Matrix()
                         if (sensorOrientation != 0) {
                             matrix.postRotate(sensorOrientation.toFloat())
                         }
-                        
+
                         val finalBitmap = Bitmap.createBitmap(bitmap, startX, startY, cropWidth, cropHeight, matrix, true)
-                        
+
                         if (currentMode == Mode.OCR_ONLINE) {
                             runGeminiOcr(finalBitmap)
                         } else {
@@ -891,7 +921,7 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
                     else -> currentMode.name
                 }
                 tvMode.text = getString(R.string.mode_format, modeDisplay)
-                
+
                 when (currentMode) {
                     Mode.ZOOM -> {
                         tvValue.visibility     = View.VISIBLE
@@ -951,6 +981,9 @@ class MainActivity : BaseMirrorActivity<ActivityMainBinding>() {
     override fun onRequestPermissionsResult(
         requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_CODE_PERMISSIONS && allPermissionsGranted()) startCamera()
+
+        // No manual delay needed here anymore!
+        // When the permission dialog closes, onResume() fires, restarts the GL thread,
+        // and starts the camera automatically if allPermissionsGranted() is true.
     }
 }
